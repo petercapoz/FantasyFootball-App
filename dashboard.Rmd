@@ -1,0 +1,528 @@
+---
+title: "Fantasy Football Analytics"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme:
+      bootswatch: darkly
+    css: styles.css
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+source("global.R")
+
+teams_df   <- get_teams()
+rosters_df <- get_rosters()
+sched_df   <- get_schedules()
+stats_raw  <- get_player_stats()
+
+# Columns a "Custom View" can plot / group by. Restricting to a known-good
+# subset keeps the Custom View Builder from breaking on odd nflverse columns.
+NUMERIC_METRICS <- c(
+  "fantasy_points", "passing_yards", "passing_tds", "interceptions",
+  "rushing_yards", "rushing_tds", "carries",
+  "receiving_yards", "receiving_tds", "receptions", "targets"
+)
+GROUP_FIELDS <- c("team" = "team", "position" = "position", "player" = "player_display_name")
+```
+
+Sidebar {.sidebar}
+=====================================================================
+
+```{r sidebar-inputs}
+selectInput("season", "Season",
+            choices = c(CURRENT_SEASON, CURRENT_SEASON - 1, CURRENT_SEASON - 2),
+            selected = CURRENT_SEASON)
+
+uiOutput("week_range_ui")
+
+selectInput("scoring_preset", "Scoring", choices = names(SCORING_PRESETS),
+            selected = "Standard")
+
+hr()
+helpText("Filters here apply across every tab. Position/team filters",
+         "specific to a tab live inside that tab.")
+
+hr()
+tags$div(
+  style = "font-size: 12px; color: #8b93a7;",
+  tags$p(strong("Data:"), "nflverse (nflreadr)"),
+  tags$p("Cached locally after first pull.")
+)
+```
+
+```{r sidebar-server, context="server"}
+# Week range depends on the selected season's schedule, so build it reactively.
+output$week_range_ui <- renderUI({
+  req(input$season)
+  season_sched <- sched_df %>% filter(season == as.integer(input$season))
+  max_week <- if (nrow(season_sched) > 0) max(season_sched$week, na.rm = TRUE) else 18
+  sliderInput("week_range", "Week range", min = 1, max = max_week,
+              value = c(1, max_week), step = 1)
+})
+
+# Reactive: season's player stats, scored, filtered to the chosen week range.
+scored_stats <- reactive({
+  req(input$season, input$week_range, input$scoring_preset)
+  scoring <- SCORING_PRESETS[[input$scoring_preset]]
+
+  season_num <- as.integer(input$season)
+  df <- if (season_num == CURRENT_SEASON) stats_raw else get_player_stats(season_num)
+
+  df %>%
+    filter(season == season_num,
+           week >= input$week_range[1], week <= input$week_range[2]) %>%
+    compute_fantasy_points(scoring)
+})
+```
+
+Overview
+=====================================================================
+
+Row {data-height=120}
+-----------------------------------------------------------------------
+
+### Top Scorer
+
+```{r}
+valueBoxOutput("vb_top_scorer")
+```
+
+### Biggest Riser
+
+```{r}
+valueBoxOutput("vb_riser")
+```
+
+### Weeks in View
+
+```{r}
+valueBoxOutput("vb_weeks")
+```
+
+### Players Tracked
+
+```{r}
+valueBoxOutput("vb_players")
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Top Performers
+
+```{r}
+gt_output("overview_table")
+```
+
+```{r overview-server, context="server"}
+season_totals <- reactive({
+  scored_stats() %>%
+    group_by(player_id, player_display_name, position, team) %>%
+    summarise(
+      fantasy_points = sum(fantasy_points, na.rm = TRUE),
+      games = n_distinct(week),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(fantasy_points))
+})
+
+output$vb_top_scorer <- renderValueBox({
+  d <- season_totals()
+  req(nrow(d) > 0)
+  top <- d[1, ]
+  valueBox(top$player_display_name,
+           caption = sprintf("%.1f pts (%s)", top$fantasy_points, top$position),
+           icon = "fa-trophy", color = APP_ACCENT)
+})
+
+output$vb_riser <- renderValueBox({
+  d <- scored_stats() %>%
+    group_by(player_id, player_display_name) %>%
+    filter(n_distinct(week) >= 2) %>%
+    arrange(week, .by_group = TRUE) %>%
+    summarise(delta = last(fantasy_points) - first(fantasy_points), .groups = "drop") %>%
+    arrange(desc(delta))
+  req(nrow(d) > 0)
+  top <- d[1, ]
+  valueBox(top$player_display_name,
+           caption = sprintf("+%.1f pts vs. first week shown", top$delta),
+           icon = "fa-arrow-trend-up", color = "success")
+})
+
+output$vb_weeks <- renderValueBox({
+  valueBox(paste0(input$week_range[1], "\u2013", input$week_range[2]),
+           caption = "Weeks in current view", icon = "fa-calendar-week", color = "info")
+})
+
+output$vb_players <- renderValueBox({
+  valueBox(n_distinct(scored_stats()$player_id),
+           caption = "Players with a stat line", icon = "fa-users", color = "secondary")
+})
+
+output$overview_table <- render_gt({
+  d <- season_totals() %>%
+    head(15) %>%
+    left_join(teams_df %>% select(team_abbr, team_logo_espn), by = c("team" = "team_abbr"))
+
+  d %>%
+    select(team_logo_espn, player_display_name, position, team, games, fantasy_points) %>%
+    gt() %>%
+    text_transform(
+      locations = cells_body(columns = team_logo_espn),
+      fn = function(x) web_image(url = x, height = 22)
+    ) %>%
+    cols_label(
+      team_logo_espn = "", player_display_name = "Player", position = "Pos",
+      team = "Team", games = "GP", fantasy_points = "Fantasy Pts"
+    ) %>%
+    fmt_number(columns = fantasy_points, decimals = 1) %>%
+    data_color(columns = fantasy_points,
+               colors = scales::col_numeric(c(APP_PANEL_BG, APP_ACCENT), domain = NULL)) %>%
+    tab_options(table.background.color = APP_PANEL_BG,
+                table.font.color = APP_TEXT,
+                column_labels.background.color = APP_PANEL_BG,
+                table.border.top.style = "none")
+})
+```
+
+Player Explorer
+=====================================================================
+
+Row {data-height=90}
+-----------------------------------------------------------------------
+
+### Filters
+
+```{r}
+fillRow(
+  selectInput("pe_position", "Position", choices = c("All", "QB", "RB", "WR", "TE", "K"),
+              selected = "All"),
+  uiOutput("pe_team_ui")
+)
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Player Stats (click a row to see the game log)
+
+```{r}
+DTOutput("player_table")
+```
+
+### Game Log
+
+```{r}
+plotlyOutput("player_gamelog")
+```
+
+```{r explorer-server, context="server"}
+output$pe_team_ui <- renderUI({
+  selectInput("pe_team", "Team", choices = c("All", sort(unique(teams_df$team_abbr))),
+              selected = "All")
+})
+
+pe_filtered <- reactive({
+  d <- scored_stats()
+  if (!is.null(input$pe_position) && input$pe_position != "All") {
+    d <- d %>% filter(position == input$pe_position)
+  }
+  if (!is.null(input$pe_team) && input$pe_team != "All") {
+    d <- d %>% filter(team == input$pe_team)
+  }
+  d
+})
+
+pe_table_data <- reactive({
+  pe_filtered() %>%
+    group_by(player_id, player_display_name, position, team) %>%
+    summarise(games = n_distinct(week),
+              fantasy_points = sum(fantasy_points, na.rm = TRUE),
+              ppg = round(fantasy_points / pmax(games, 1), 1),
+              .groups = "drop") %>%
+    arrange(desc(fantasy_points))
+})
+
+output$player_table <- renderDT({
+  datatable(
+    pe_table_data() %>% select(-player_id),
+    selection = "single", rownames = FALSE,
+    colnames = c("Player", "Pos", "Team", "GP", "Fantasy Pts", "PPG"),
+    options = list(pageLength = 10, dom = "ftip")
+  ) %>% formatStyle(columns = seq_len(ncol(pe_table_data()) - 1),
+                     backgroundColor = APP_PANEL_BG, color = APP_TEXT)
+})
+
+selected_player_id <- reactive({
+  idx <- input$player_table_rows_selected
+  req(length(idx) == 1)
+  pe_table_data()$player_id[idx]
+})
+
+output$player_gamelog <- renderPlotly({
+  idx <- input$player_table_rows_selected
+  if (is.null(idx) || length(idx) != 1) {
+    return(plotly_empty(type = "scatter", mode = "markers") %>%
+             layout(paper_bgcolor = APP_PANEL_BG, plot_bgcolor = APP_PANEL_BG,
+                    annotations = list(text = "Click a player row to see their weekly game log",
+                                        showarrow = FALSE, font = list(color = APP_MUTED))))
+  }
+
+  pid <- selected_player_id()
+  gl <- pe_filtered() %>% filter(player_id == pid) %>% arrange(week)
+  req(nrow(gl) > 0)
+
+  # Pull opponent for each week from the schedule so we can label points
+  # with the opposing team's logo.
+  gl <- gl %>%
+    left_join(
+      sched_df %>%
+        select(season, week, home_team, away_team) %>%
+        pivot_longer(c(home_team, away_team), names_to = "side", values_to = "team") %>%
+        mutate(opponent = if_else(side == "home_team", NA_character_, NA_character_)),
+      by = c("season", "week", "team")
+    )
+  # Simpler/robust opponent lookup: for each row's team+week, find the other
+  # side of that game in the schedule.
+  opp_lookup <- sched_df %>%
+    filter(season == unique(gl$season)[1]) %>%
+    select(week, home_team, away_team) %>%
+    pivot_longer(c(home_team, away_team), names_to = "side", values_to = "team") %>%
+    mutate(opponent = if_else(side == "home_team",
+                               sched_df$away_team[match(week, sched_df$week)],
+                               sched_df$home_team[match(week, sched_df$week)]))
+  gl <- gl %>% left_join(opp_lookup %>% select(week, team, opponent), by = c("week", "team"))
+  gl <- gl %>% left_join(teams_df %>% select(team_abbr, team_logo_espn),
+                          by = c("opponent" = "team_abbr"))
+
+  p <- plot_ly(gl, x = ~week, y = ~fantasy_points, type = "scatter", mode = "lines+markers",
+               line = list(color = APP_ACCENT), marker = list(color = APP_ACCENT, size = 6),
+               text = ~paste0("Week ", week, " vs ", opponent, ": ", fantasy_points, " pts"),
+               hoverinfo = "text")
+
+  # Overlay opponent logos as image annotations at each point (nflplotR is
+  # ggplot-oriented; for an interactive plotly chart we place the logos
+  # directly via plotly's `images` layout so they stay crisp on hover/zoom).
+  logo_images <- gl %>%
+    filter(!is.na(team_logo_espn)) %>%
+    transmute(source = team_logo_espn, x = week, y = fantasy_points,
+              xref = "x", yref = "y", sizex = 1.2, sizey = max(gl$fantasy_points, 1) * 0.12,
+              xanchor = "center", yanchor = "bottom") %>%
+    purrr::transpose()
+
+  p %>%
+    layout(
+      paper_bgcolor = APP_PANEL_BG, plot_bgcolor = APP_PANEL_BG,
+      font = list(color = APP_TEXT),
+      xaxis = list(title = "Week", gridcolor = "#242c40"),
+      yaxis = list(title = "Fantasy Points", gridcolor = "#242c40"),
+      images = logo_images
+    )
+})
+```
+
+Team Comparison
+=====================================================================
+
+Row {data-height=90}
+-----------------------------------------------------------------------
+
+### Pick teams
+
+```{r}
+uiOutput("tc_team_picker")
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Aggregate Fantasy Points by Team
+
+```{r}
+plotOutput("tc_points_for")
+```
+
+### Points Allowed to Opposing Fantasy Rosters
+
+```{r}
+plotOutput("tc_points_allowed")
+```
+
+```{r team-compare-server, context="server"}
+output$tc_team_picker <- renderUI({
+  selectInput("tc_teams", NULL, choices = sort(unique(teams_df$team_abbr)),
+              selected = sort(unique(teams_df$team_abbr))[1:4], multiple = TRUE)
+})
+
+tc_data <- reactive({
+  req(input$tc_teams)
+  scored_stats() %>%
+    filter(team %in% input$tc_teams) %>%
+    group_by(team) %>%
+    summarise(points_for = sum(fantasy_points, na.rm = TRUE), .groups = "drop")
+})
+
+output$tc_points_for <- renderPlot({
+  d <- tc_data()
+  req(nrow(d) > 0)
+  ggplot2::ggplot(d, ggplot2::aes(x = reorder(team, points_for), y = points_for, fill = team)) +
+    ggplot2::geom_col(show.legend = FALSE, width = 0.65) +
+    ggplot2::scale_fill_manual(values = setNames(
+      sapply(d$team, function(a) team_primary_color(teams_df, a)), d$team)) +
+    ggplot2::coord_flip() +
+    ggplot2::labs(x = NULL, y = "Total Fantasy Points Scored (Standard)") +
+    ggplot2::theme(axis.text.y = nflplotR::element_nfl_logo(size = 1.1)) +
+    gg_dark_theme()
+})
+
+# "Points allowed": sum of fantasy points scored *against* each team, i.e.
+# the fantasy output of every opposing offensive player each week.
+tc_allowed_data <- reactive({
+  req(input$tc_teams)
+  s <- scored_stats()
+  sched_w <- sched_df %>%
+    select(season, week, home_team, away_team) %>%
+    pivot_longer(c(home_team, away_team), names_to = "side", values_to = "team") %>%
+    mutate(opponent = if_else(side == "home_team",
+                               sched_df$away_team[match(interaction(week), interaction(sched_df$week))],
+                               sched_df$home_team[match(interaction(week), interaction(sched_df$week))]))
+  # Robust per-row opponent join (avoids the interaction()-based lookup above
+  # being fragile across duplicate weeks/seasons).
+  opp_map <- bind_rows(
+    sched_df %>% transmute(season, week, team = home_team, opponent = away_team),
+    sched_df %>% transmute(season, week, team = away_team, opponent = home_team)
+  )
+  s %>%
+    left_join(opp_map, by = c("season", "week", "team")) %>%
+    filter(opponent %in% input$tc_teams) %>%
+    group_by(opponent) %>%
+    summarise(points_allowed = sum(fantasy_points, na.rm = TRUE), .groups = "drop") %>%
+    rename(team = opponent)
+})
+
+output$tc_points_allowed <- renderPlot({
+  d <- tc_allowed_data()
+  req(nrow(d) > 0)
+  ggplot2::ggplot(d, ggplot2::aes(x = reorder(team, points_allowed), y = points_allowed, fill = team)) +
+    ggplot2::geom_col(show.legend = FALSE, width = 0.65) +
+    ggplot2::scale_fill_manual(values = setNames(
+      sapply(d$team, function(a) team_primary_color(teams_df, a)), d$team)) +
+    ggplot2::coord_flip() +
+    ggplot2::labs(x = NULL, y = "Fantasy Points Allowed to Opponents") +
+    ggplot2::theme(axis.text.y = nflplotR::element_nfl_logo(size = 1.1)) +
+    gg_dark_theme()
+})
+```
+
+Custom View Builder
+=====================================================================
+
+Row {data-height=110}
+-----------------------------------------------------------------------
+
+### Build a view
+
+```{r}
+fillRow(
+  selectInput("cv_metric", "Metric", choices = NUMERIC_METRICS, selected = "fantasy_points"),
+  selectInput("cv_group", "Group by", choices = names(GROUP_FIELDS), selected = "team"),
+  selectInput("cv_chart", "Chart type", choices = c("Bar", "Line", "Scatter"), selected = "Bar"),
+  selectInput("cv_position", "Position filter", choices = c("All", "QB", "RB", "WR", "TE", "K"),
+              selected = "All")
+)
+```
+
+Row {data-height=60}
+-----------------------------------------------------------------------
+
+### 
+
+```{r}
+fillRow(
+  actionButton("cv_save", "Save current view", icon = icon("floppy-disk"), class = "btn-primary"),
+  uiOutput("cv_saved_picker")
+)
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Custom Chart
+
+```{r}
+plotlyOutput("cv_chart_out")
+```
+
+```{r custom-view-server, context="server"}
+saved_views <- reactiveValues(views = list())
+
+cv_current_config <- reactive({
+  list(metric = input$cv_metric, group = input$cv_group,
+       chart = input$cv_chart, position = input$cv_position,
+       week_range = input$week_range, season = input$season)
+})
+
+observeEvent(input$cv_save, {
+  cfg <- cv_current_config()
+  label <- sprintf("%s by %s (%s) — %s, wks %s\u2013%s",
+                    cfg$metric, cfg$group, cfg$chart, cfg$season,
+                    cfg$week_range[1], cfg$week_range[2])
+  saved_views$views[[label]] <- cfg
+})
+
+output$cv_saved_picker <- renderUI({
+  req(length(saved_views$views) > 0)
+  selectInput("cv_load", "Saved views (this session)",
+              choices = names(saved_views$views))
+})
+
+observeEvent(input$cv_load, {
+  cfg <- saved_views$views[[input$cv_load]]
+  req(cfg)
+  updateSelectInput(session = getDefaultReactiveDomain(), "cv_metric", selected = cfg$metric)
+  updateSelectInput(session = getDefaultReactiveDomain(), "cv_group", selected = cfg$group)
+  updateSelectInput(session = getDefaultReactiveDomain(), "cv_chart", selected = cfg$chart)
+  updateSelectInput(session = getDefaultReactiveDomain(), "cv_position", selected = cfg$position)
+}, ignoreInit = TRUE)
+
+cv_data <- reactive({
+  req(input$cv_metric, input$cv_group)
+  d <- scored_stats()
+  if (!is.null(input$cv_position) && input$cv_position != "All") {
+    d <- d %>% filter(position == input$cv_position)
+  }
+  group_col <- GROUP_FIELDS[[input$cv_group]]
+  d %>%
+    group_by(.group = .data[[group_col]]) %>%
+    summarise(value = sum(.data[[input$cv_metric]], na.rm = TRUE), .groups = "drop") %>%
+    arrange(desc(value)) %>%
+    head(25)
+})
+
+output$cv_chart_out <- renderPlotly({
+  d <- cv_data()
+  req(nrow(d) > 0)
+
+  base <- plot_ly(d, x = ~.group, y = ~value,
+                   text = ~paste0(.group, ": ", round(value, 1)), hoverinfo = "text",
+                   marker = list(color = APP_ACCENT), line = list(color = APP_ACCENT))
+
+  p <- switch(input$cv_chart,
+    "Bar"     = base %>% add_bars(),
+    "Line"    = base %>% add_lines(),
+    "Scatter" = base %>% add_markers(marker = list(color = APP_ACCENT, size = 10))
+  )
+
+  p %>% layout(
+    paper_bgcolor = APP_PANEL_BG, plot_bgcolor = APP_PANEL_BG,
+    font = list(color = APP_TEXT),
+    xaxis = list(title = names(GROUP_FIELDS)[GROUP_FIELDS == GROUP_FIELDS[[input$cv_group]]],
+                 gridcolor = "#242c40", categoryorder = "total descending"),
+    yaxis = list(title = input$cv_metric, gridcolor = "#242c40")
+  )
+})
+```

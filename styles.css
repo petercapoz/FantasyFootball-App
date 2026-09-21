@@ -1,0 +1,92 @@
+/* ------------------------------------------------------------------------
+   styles.css — modern/dark polish layered on top of the "darkly" bootswatch
+   theme flexdashboard ships with. Kept intentionally light-touch so the
+   Rmd's YAML `theme:` setting still does most of the work.
+   ------------------------------------------------------------------------ */
+
+:root {
+  --app-bg: #0f1420;
+  --panel-bg: #161c2c;
+  --text: #e7ecf5;
+  --muted: #8b93a7;
+  --accent: #3fa7d6;
+}
+
+body, .navbar, .dashboard-page-wrapper {
+  background-color: var(--app-bg) !important;
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.navbar {
+  border-bottom: 1px solid #242c40;
+}
+
+.navbar-brand, .navbar-nav > li > a {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chart-wrapper, .storyboard, .section.sidebar, .dashboard-section {
+  background-color: var(--app-bg) !important;
+}
+
+.chart-wrapper {
+  background-color: var(--panel-bg) !important;
+  border: 1px solid #232a3d;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.chart-title {
+  background-color: transparent !important;
+  color: var(--text) !important;
+  font-weight: 600;
+  border-bottom: 1px solid #232a3d !important;
+  letter-spacing: 0.01em;
+}
+
+.section.sidebar {
+  background-color: var(--panel-bg) !important;
+  border-right: 1px solid #232a3d;
+}
+
+.value-box {
+  border-radius: 14px !important;
+}
+
+.value-box .value {
+  font-weight: 700 !important;
+}
+
+/* DT tables */
+table.dataTable {
+  background-color: var(--panel-bg) !important;
+  color: var(--text) !important;
+}
+table.dataTable thead th {
+  color: var(--muted) !important;
+  border-bottom: 1px solid #242c40 !important;
+}
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select {
+  background-color: var(--app-bg);
+  color: var(--text);
+  border: 1px solid #242c40;
+  border-radius: 6px;
+}
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_paginate {
+  color: var(--muted) !important;
+}
+
+/* Buttons / inputs */
+.btn-primary {
+  background-color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+.form-control, .selectize-input {
+  background-color: var(--app-bg) !important;
+  color: var(--text) !important;
+  border: 1px solid #242c40 !important;
+}
