@@ -49,16 +49,39 @@ output$week_range_ui <- renderUI({
 })
 
 # The full player-week advanced table for the selected season/scoring.
+# On any failure inside the data-build pipeline, log the real message to
+# the R console (via message()) and hand req() a NULL, which puts this
+# output — and everything downstream of it — into Shiny's normal "nothing
+# to show yet" state rather than propagating a raw error object into a
+# DT/plotly widget. This is the standard req()-based pattern rather than a
+# custom validate()/conditionMessage() combination, specifically because
+# that combination is what caused the previous crash.
 adv_week <- reactive({
   req(input$season, input$scoring_preset)
-  build_advanced_player_week(as.integer(input$season), SCORING_PRESETS[[input$scoring_preset]])
+  result <- tryCatch(
+    build_advanced_player_week(as.integer(input$season), SCORING_PRESETS[[input$scoring_preset]]),
+    error = function(e) {
+      message("adv_week() failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+  req(result)
+  result
 })
 
 # Season-to-date aggregation across the selected week range.
 adv_season <- reactive({
   req(input$season, input$scoring_preset, input$week_range)
-  build_advanced_player_season(as.integer(input$season), SCORING_PRESETS[[input$scoring_preset]],
-                                week_min = input$week_range[1], week_max = input$week_range[2])
+  result <- tryCatch(
+    build_advanced_player_season(as.integer(input$season), SCORING_PRESETS[[input$scoring_preset]],
+                                  week_min = input$week_range[1], week_max = input$week_range[2]),
+    error = function(e) {
+      message("adv_season() failed: ", conditionMessage(e))
+      NULL
+    }
+  )
+  req(result)
+  result
 })
 
 rb_season <- reactive({
@@ -106,7 +129,7 @@ Row
 ### Top 15 — RB / WR Fantasy Points
 
 ```{r}
-gt_output("overview_table")
+DTOutput("overview_table")
 ```
 
 ```{r overview-server, context="server"}
@@ -138,27 +161,26 @@ output$vb_wr_opp <- renderValueBox({
            icon = "fa-bolt", color = "success")
 })
 
-output$overview_table <- render_gt({
+output$overview_table <- renderDT({
   d <- adv_season() %>%
     filter(position %in% c("RB", "WR")) %>%
     arrange(desc(fantasy_points)) %>%
     head(15) %>%
-    left_join(teams_df %>% select(team_abbr, team_logo_espn), by = c("team" = "team_abbr"))
+    left_join(teams_df %>% select(team_abbr, team_logo_espn), by = c("team" = "team_abbr")) %>%
+    mutate(logo = ifelse(is.na(team_logo_espn), "",
+                          sprintf('<img src="%s" height="22"/>', team_logo_espn))) %>%
+    select(logo, player_display_name, position, team, games, fantasy_points,
+           fantasy_points_per_game, opportunities)
 
-  d %>%
-    select(team_logo_espn, player_display_name, position, team, games, fantasy_points,
-           fantasy_points_per_game, opportunities) %>%
-    gt() %>%
-    text_transform(locations = cells_body(columns = team_logo_espn),
-                    fn = function(x) web_image(url = x, height = 22)) %>%
-    cols_label(team_logo_espn = "", player_display_name = "Player", position = "Pos", team = "Team",
-               games = "GP", fantasy_points = "Fantasy Pts", fantasy_points_per_game = "PPG",
-               opportunities = "Opportunities") %>%
-    fmt_number(columns = c(fantasy_points, fantasy_points_per_game), decimals = 1) %>%
-    sub_missing(missing_text = "N/A") %>%
-    data_color(columns = fantasy_points, colors = scales::col_numeric(c(APP_PANEL_BG, APP_ACCENT), domain = NULL)) %>%
-    tab_options(table.background.color = APP_PANEL_BG, table.font.color = APP_TEXT,
-                column_labels.background.color = APP_PANEL_BG, table.border.top.style = "none")
+  datatable(
+    d, escape = FALSE, rownames = FALSE, selection = "none",
+    colnames = c("", "Player", "Pos", "Team", "GP", "Fantasy Pts", "PPG", "Opportunities"),
+    options = list(pageLength = 15, dom = "t", ordering = TRUE)
+  ) %>%
+    formatRound(columns = c("fantasy_points", "fantasy_points_per_game"), digits = 1) %>%
+    formatStyle(columns = seq_len(ncol(d)), backgroundColor = APP_PANEL_BG, color = APP_TEXT) %>%
+    formatStyle("fantasy_points", background = styleColorBar(range(d$fantasy_points, na.rm = TRUE), APP_ACCENT),
+                backgroundSize = "80% 70%", backgroundRepeat = "no-repeat", backgroundPosition = "left")
 })
 ```
 
@@ -754,29 +776,35 @@ output$cv_team_ui <- renderUI({
 output$cv_metric_controls <- renderUI({
   req(input$cv_chart)
   metrics <- plottable_metrics(adv_season())
+  cfg <- isolate(pending_cfg())  # seed values from a just-loaded saved view, if any
+  if (!is.null(cfg)) pending_cfg(NULL)  # consume it once so later rebuilds don't re-seed stale values
+
   if (input$cv_chart == "Scatter") {
     fillRow(
-      selectInput("cv_x", "X metric", choices = metrics, selected = unname(metrics["Opportunities (Carries+Targets)"])),
-      selectInput("cv_y", "Y metric", choices = metrics, selected = unname(metrics["Fantasy Points"])),
-      numericInput("cv_min_targets", "Minimum targets", value = 0, min = 0),
-      numericInput("cv_min_carries", "Minimum carries", value = 0, min = 0)
+      selectInput("cv_x", "X metric", choices = metrics,
+                  selected = cfg$x %||% unname(metrics["Opportunities (Carries+Targets)"])),
+      selectInput("cv_y", "Y metric", choices = metrics,
+                  selected = cfg$y %||% unname(metrics["Fantasy Points"])),
+      numericInput("cv_min_targets", "Minimum targets", value = cfg$min_targets %||% 0, min = 0),
+      numericInput("cv_min_carries", "Minimum carries", value = cfg$min_carries %||% 0, min = 0)
     )
   } else if (input$cv_chart == "Bar") {
     fillRow(
-      selectInput("cv_metric", "Metric", choices = metrics, selected = unname(metrics["Fantasy Points"])),
+      selectInput("cv_metric", "Metric", choices = metrics,
+                  selected = cfg$metric %||% unname(metrics["Fantasy Points"])),
       numericInput("cv_top_n", "Show top N players", value = 15, min = 5, max = 40),
-      numericInput("cv_min_targets", "Minimum targets", value = 0, min = 0),
-      numericInput("cv_min_carries", "Minimum carries", value = 0, min = 0)
+      numericInput("cv_min_targets", "Minimum targets", value = cfg$min_targets %||% 0, min = 0),
+      numericInput("cv_min_carries", "Minimum carries", value = cfg$min_carries %||% 0, min = 0)
     )
   } else { # Line — the only chart type allowed to connect points, and only
            # across an explicitly ordered time axis (week).
     fillRow(
       selectInput("cv_metric", "Weekly metric", choices = plottable_metrics(adv_week()),
-                  selected = "fantasy_points"),
-      selectizeInput("cv_players", "Player(s)", choices = NULL, multiple = TRUE,
+                  selected = cfg$metric %||% "fantasy_points"),
+      selectizeInput("cv_players", "Player(s)", choices = cfg$players, selected = cfg$players, multiple = TRUE,
                      options = list(maxItems = 6, placeholder = "Type a player name...")),
-      numericInput("cv_min_targets", "Minimum targets", value = 0, min = 0),
-      numericInput("cv_min_carries", "Minimum carries", value = 0, min = 0)
+      numericInput("cv_min_targets", "Minimum targets", value = cfg$min_targets %||% 0, min = 0),
+      numericInput("cv_min_carries", "Minimum carries", value = cfg$min_carries %||% 0, min = 0)
     )
   }
 })
@@ -785,7 +813,9 @@ observe({
   req(input$cv_chart == "Line")
   choices <- adv_season() %>% filter(games >= 1) %>% arrange(desc(fantasy_points)) %>%
     pull(player_display_name) %>% unique()
-  updateSelectizeInput(session = getDefaultReactiveDomain(), "cv_players", choices = choices, server = TRUE)
+  cfg <- isolate(pending_cfg())
+  updateSelectizeInput(session = getDefaultReactiveDomain(), "cv_players",
+                        choices = choices, selected = cfg$players, server = TRUE)
 })
 
 cv_base_data <- reactive({
@@ -798,6 +828,8 @@ cv_base_data <- reactive({
 })
 
 saved_views <- reactiveValues(views = list())
+pending_cfg <- reactiveVal(NULL)  # holds a just-loaded saved view's x/y/metric/players
+                                    # until cv_metric_controls (above) reads it while rebuilding
 
 observeEvent(input$cv_save, {
   cfg <- list(
@@ -821,24 +853,11 @@ observeEvent(input$cv_load, {
   cfg <- saved_views$views[[input$cv_load]]
   req(cfg)
   s <- getDefaultReactiveDomain()
-  updateSelectInput(s, "cv_chart", selected = cfg$chart)
+  pending_cfg(cfg)  # cv_metric_controls reads this the next time it rebuilds
   updateSelectInput(s, "cv_position", selected = cfg$position)
   updateSelectInput(s, "cv_team", selected = cfg$team)
   updateSelectInput(s, "cv_color", selected = cfg$color)
-  # x/y/metric/players controls are rebuilt reactively by cv_metric_controls
-  # once cv_chart updates; re-apply their values on the next tick.
-  later::later(function() {
-    if (cfg$chart == "Scatter") {
-      updateSelectInput(s, "cv_x", selected = cfg$x); updateSelectInput(s, "cv_y", selected = cfg$y)
-    } else if (cfg$chart == "Bar") {
-      updateSelectInput(s, "cv_metric", selected = cfg$metric)
-    } else {
-      updateSelectInput(s, "cv_metric", selected = cfg$metric)
-      updateSelectizeInput(s, "cv_players", selected = cfg$players)
-    }
-    updateNumericInput(s, "cv_min_targets", value = cfg$min_targets)
-    updateNumericInput(s, "cv_min_carries", value = cfg$min_carries)
-  }, delay = 0.3)
+  updateSelectInput(s, "cv_chart", selected = cfg$chart)  # triggers cv_metric_controls to rebuild
 }, ignoreInit = TRUE)
 
 output$cv_chart_out <- renderPlotly({
@@ -947,29 +966,39 @@ Row
 ### Plain-English Definitions
 
 ```{r}
-bslib::accordion(
-  open = FALSE,
-  bslib::accordion_panel("Fantasy Points / Target, / Carry, / Opportunity",
-    "Fantasy points divided by the relevant volume stat. A high points-per-target with a low raw target count often signals a player who could produce more if given more volume; a low points-per-target with a high target count can signal inefficient usage (short/low-value targets)."),
-  bslib::accordion_panel("Target Share",
-    "A player's targets divided by their team's total targets over the same span. Directly sourced from nflverse (load_player_stats())."),
-  bslib::accordion_panel("Air Yard Share",
-    "A player's share of the team's total air yards (the distance the ball traveled in the air on their targets, summed). Directly sourced from nflverse."),
-  bslib::accordion_panel("WOPR (Weighted Opportunity Rating)",
-    "1.5 \u00d7 Target Share + 0.7 \u00d7 Air Yard Share, as defined by nflfastR. Blends target volume with target quality (depth) into one number."),
-  bslib::accordion_panel("RACR (Receiver Air Conversion Ratio)",
-    "Receiving yards divided by receiving air yards. Above 1.0 means a receiver is generating more yardage than the ball traveled in the air (via YAC); well below 1.0 can indicate a low catch rate on the targets they do get."),
-  bslib::accordion_panel("Average Depth of Target (aDOT)",
-    "How far downfield, on average, a player is targeted. This app shows both the NGS-sourced version (avg_intended_air_yards) and a calculated fallback (receiving air yards \u00f7 targets) when NGS data isn't available for a given slice — always labeled which one is shown."),
-  bslib::accordion_panel("Separation / Cushion (NGS)",
-    "Separation is the distance (yards) between a receiver and the nearest defender at the moment of catch or incompletion. Cushion is that same distance at the snap. Both come from NFL Next Gen Stats and only cover receivers who meet NGS's minimum-target threshold for a given week."),
-  bslib::accordion_panel("EPA (Expected Points Added)",
-    "How much a play changed the offense's expected points. Positive EPA means the play helped the team's scoring outlook more than an average play in that situation; negative means it hurt. Rushing EPA and Receiving EPA here are season totals across the selected weeks, not per-play averages."),
-  bslib::accordion_panel("Yards Before/After Contact, Broken Tackles (PFR)",
-    "Pro-Football-Reference's manual charting of a run: yards gained before the first defender makes contact, yards gained after that contact, and how many tackles were broken. Sourced from load_pfr_advstats(stat_type = 'rush'/'rec')."),
-  bslib::accordion_panel("Routes Run / Yards Per Route Run / Targets Per Route Run",
-    "Not available. nflverse's open datasets don't publish a player-week 'routes run' figure — that level of charting is part of PFF's paid product, not the nflverse ecosystem this app is built on. Rather than approximate it (e.g., from snap counts), the app flags these as unavailable in the Advanced Metrics catalog and offers Snap Share and Targets as separate, honestly-labeled volume indicators instead."),
-  bslib::accordion_panel("Contested Targets / Red-Zone Targets",
-    "Not available in the tables this app loads. Contested-catch charting isn't part of the loaded PFR/NGS datasets, and red-zone targets would require filtering full play-by-play by yardline — out of scope for this MVP's cached, player-week-level tables.")
+tags$div(class = "definitions-list",
+  tags$details(open = NA,
+    tags$summary("Fantasy Points / Target, / Carry, / Opportunity"),
+    tags$p("Fantasy points divided by the relevant volume stat. A high points-per-target with a low raw target count often signals a player who could produce more if given more volume; a low points-per-target with a high target count can signal inefficient usage (short/low-value targets).")),
+  tags$details(
+    tags$summary("Target Share"),
+    tags$p("A player's targets divided by their team's total targets over the same span. Directly sourced from nflverse (load_player_stats()).")),
+  tags$details(
+    tags$summary("Air Yard Share"),
+    tags$p("A player's share of the team's total air yards (the distance the ball traveled in the air on their targets, summed). Directly sourced from nflverse.")),
+  tags$details(
+    tags$summary("WOPR (Weighted Opportunity Rating)"),
+    tags$p("1.5 \u00d7 Target Share + 0.7 \u00d7 Air Yard Share, as defined by nflfastR. Blends target volume with target quality (depth) into one number.")),
+  tags$details(
+    tags$summary("RACR (Receiver Air Conversion Ratio)"),
+    tags$p("Receiving yards divided by receiving air yards. Above 1.0 means a receiver is generating more yardage than the ball traveled in the air (via YAC); well below 1.0 can indicate a low catch rate on the targets they do get.")),
+  tags$details(
+    tags$summary("Average Depth of Target (aDOT)"),
+    tags$p("How far downfield, on average, a player is targeted. This app shows both the NGS-sourced version (avg_intended_air_yards) and a calculated fallback (receiving air yards \u00f7 targets) when NGS data isn't available for a given slice \u2014 always labeled which one is shown.")),
+  tags$details(
+    tags$summary("Separation / Cushion (NGS)"),
+    tags$p("Separation is the distance (yards) between a receiver and the nearest defender at the moment of catch or incompletion. Cushion is that same distance at the snap. Both come from NFL Next Gen Stats and only cover receivers who meet NGS's minimum-target threshold for a given week.")),
+  tags$details(
+    tags$summary("EPA (Expected Points Added)"),
+    tags$p("How much a play changed the offense's expected points. Positive EPA means the play helped the team's scoring outlook more than an average play in that situation; negative means it hurt. Rushing EPA and Receiving EPA here are season totals across the selected weeks, not per-play averages.")),
+  tags$details(
+    tags$summary("Yards Before/After Contact, Broken Tackles (PFR)"),
+    tags$p("Pro-Football-Reference's manual charting of a run: yards gained before the first defender makes contact, yards gained after that contact, and how many tackles were broken. Sourced from load_pfr_advstats(stat_type = 'rush'/'rec').")),
+  tags$details(
+    tags$summary("Routes Run / Yards Per Route Run / Targets Per Route Run"),
+    tags$p("Not available. nflverse's open datasets don't publish a player-week 'routes run' figure \u2014 that level of charting is part of PFF's paid product, not the nflverse ecosystem this app is built on. Rather than approximate it (e.g., from snap counts), the app flags these as unavailable in the Advanced Metrics catalog and offers Snap Share and Targets as separate, honestly-labeled volume indicators instead.")),
+  tags$details(
+    tags$summary("Contested Targets / Red-Zone Targets"),
+    tags$p("Not available in the tables this app loads. Contested-catch charting isn't part of the loaded PFR/NGS datasets, and red-zone targets would require filtering full play-by-play by yardline \u2014 out of scope for this MVP's cached, player-week-level tables."))
 )
 ```

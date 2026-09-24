@@ -1,92 +1,254 @@
 /* ------------------------------------------------------------------------
-   styles.css — modern/dark polish layered on top of the "darkly" bootswatch
-   theme flexdashboard ships with. Kept intentionally light-touch so the
-   Rmd's YAML `theme:` setting still does most of the work.
+   styles.css — "analytics terminal" visual layer on top of flexdashboard's
+   darkly bootswatch base. Adds a gradient backdrop, glass-panel cards with
+   hover lift, a consistent glow/accent system, refined typography, and
+   matching DT/plotly/value-box treatments. No JS, no extra R packages —
+   pure CSS so it can't introduce new failure modes.
    ------------------------------------------------------------------------ */
- 
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
 :root {
-  --app-bg: #0f1420;
-  --panel-bg: #161c2c;
-  --text: #e7ecf5;
-  --muted: #8b93a7;
-  --accent: #3fa7d6;
+  --app-bg-0:   #0a0e17;
+  --app-bg-1:   #0f1420;
+  --panel-bg:   #141a29;
+  --panel-bg-2: #182035;
+  --border:     #232c44;
+  --text:       #e9edf6;
+  --muted:      #8b93a7;
+  --accent:     #3fa7d6;
+  --accent-2:   #7c5cff;
+  --accent-glow: rgba(63, 167, 214, 0.35);
+  --good:       #35c98f;
+  --warn:       #f2a65a;
 }
- 
+
+* { box-sizing: border-box; }
+
 body, .navbar, .dashboard-page-wrapper {
-  background-color: var(--app-bg) !important;
+  background:
+    radial-gradient(1200px 700px at 8% -10%, rgba(124, 92, 255, 0.10), transparent 60%),
+    radial-gradient(1000px 600px at 100% 0%, rgba(63, 167, 214, 0.10), transparent 55%),
+    var(--app-bg-0) !important;
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-}
- 
-.navbar {
-  border-bottom: 1px solid #242c40;
-}
- 
-.navbar-brand, .navbar-nav > li > a {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
- 
-.chart-wrapper, .storyboard, .section.sidebar, .dashboard-section {
-  background-color: var(--app-bg) !important;
-}
- 
-.chart-wrapper {
-  background-color: var(--panel-bg) !important;
-  border: 1px solid #232a3d;
-  border-radius: 14px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-}
- 
-.chart-title {
-  background-color: transparent !important;
-  color: var(--text) !important;
-  font-weight: 600;
-  border-bottom: 1px solid #232a3d !important;
   letter-spacing: 0.01em;
 }
- 
+
+h1, h2, h3, h4, h5, .navbar-brand, .chart-title, .value-box .value {
+  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+}
+
+/* ---------------------------------------------------------------- navbar */
+
+.navbar {
+  background: linear-gradient(180deg, rgba(20, 26, 41, 0.95), rgba(15, 20, 32, 0.95)) !important;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+}
+
+.navbar-brand {
+  font-weight: 700 !important;
+  letter-spacing: 0.02em;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.navbar-nav > li > a {
+  font-weight: 500;
+  font-size: 13.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted) !important;
+  transition: color 0.15s ease;
+}
+.navbar-nav > li > a:hover,
+.navbar-nav > li.active > a {
+  color: var(--text) !important;
+}
+.navbar-nav > li.active > a {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* --------------------------------------------------------------- panels */
+
+.storyboard, .section.dashboard-section {
+  background: transparent !important;
+}
+
+.chart-wrapper {
+  background: linear-gradient(180deg, var(--panel-bg-2), var(--panel-bg)) !important;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  overflow: hidden;
+}
+.chart-wrapper:hover {
+  transform: translateY(-2px);
+  border-color: #2c3757;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(63, 167, 214, 0.12);
+}
+
+.chart-title {
+  background: transparent !important;
+  color: var(--text) !important;
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+.chart-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.chart-stage { padding: 6px; }
+
+/* --------------------------------------------------------------- sidebar */
+
 .section.sidebar {
-  background-color: var(--panel-bg) !important;
-  border-right: 1px solid #232a3d;
+  background: linear-gradient(180deg, var(--panel-bg-2), var(--app-bg-1)) !important;
+  border-right: 1px solid var(--border);
 }
- 
+.section.sidebar .form-group label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- value boxes */
+
 .value-box {
-  border-radius: 14px !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.30);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
 }
- 
+.value-box::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), transparent 60%);
+  pointer-events: none;
+}
 .value-box .value {
   font-weight: 700 !important;
+  font-size: 1.9rem !important;
+  letter-spacing: -0.01em;
 }
- 
-/* DT tables */
+.value-box .caption {
+  font-size: 12.5px !important;
+  opacity: 0.9;
+}
+
+/* -------------------------------------------------------------- DT tables */
+
 table.dataTable {
-  background-color: var(--panel-bg) !important;
+  background-color: transparent !important;
   color: var(--text) !important;
+  border-collapse: separate !important;
+  border-spacing: 0 4px !important;
 }
 table.dataTable thead th {
   color: var(--muted) !important;
-  border-bottom: 1px solid #242c40 !important;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border) !important;
+  padding-bottom: 10px !important;
+}
+table.dataTable tbody tr {
+  background-color: var(--panel-bg-2) !important;
+}
+table.dataTable tbody tr:hover {
+  background-color: #1c243b !important;
+}
+table.dataTable tbody td {
+  border-top: none !important;
+  padding: 8px 10px !important;
 }
 .dataTables_wrapper .dataTables_filter input,
 .dataTables_wrapper .dataTables_length select {
-  background-color: var(--app-bg);
+  background-color: var(--app-bg-1);
   color: var(--text);
-  border: 1px solid #242c40;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
 }
 .dataTables_wrapper .dataTables_info,
 .dataTables_wrapper .dataTables_paginate {
   color: var(--muted) !important;
+  font-size: 12.5px;
 }
- 
-/* Buttons / inputs */
+.dataTables_wrapper .paginate_button {
+  border-radius: 6px !important;
+}
+
+/* ---------------------------------------------------------- buttons/inputs */
+
 .btn-primary {
-  background-color: var(--accent) !important;
-  border-color: var(--accent) !important;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2)) !important;
+  border: none !important;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 18px var(--accent-glow);
 }
+.btn-primary:hover { filter: brightness(1.08); }
+
 .form-control, .selectize-input {
-  background-color: var(--app-bg) !important;
+  background-color: var(--app-bg-1) !important;
   color: var(--text) !important;
-  border: 1px solid #242c40 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
 }
+.selectize-dropdown {
+  background-color: var(--panel-bg) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+.irs--shiny .irs-bar { background: linear-gradient(90deg, var(--accent), var(--accent-2)) !important; }
+.irs--shiny .irs-handle { border-color: var(--accent) !important; }
+
+/* -------------------------------------------------------- player detail */
+
+.definitions-list details {
+  background: var(--panel-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 8px;
+}
+.definitions-list summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+}
+.definitions-list p {
+  color: var(--muted);
+  margin: 8px 0 2px;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- scrollbar */
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--app-bg-1); }
+::-webkit-scrollbar-thumb {
+  background: #2b3554;
+  border-radius: 8px;
+  border: 2px solid var(--app-bg-1);
+}
+::-webkit-scrollbar-thumb:hover { background: #3a4770; }

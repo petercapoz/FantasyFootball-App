@@ -1,11 +1,4 @@
 # ==============================================================================
-# global.R
-# Fantasy Football Analytics — RB/WR-focused platform
-#
-# Loads packages, pulls & caches nflverse datasets, builds a metric
-# dictionary (directly-sourced vs. calculated vs. unavailable), and defines
-# the advanced-metrics/opportunity-score layer used by fantasy_analytics.Rmd.
-#
 # DATA SOURCE NOTES (read before adding new metrics):
 #   - nflreadr::load_player_stats() is the base offensive box score. It
 #     already includes target_share, air_yards_share, racr, wopr, dakota,
@@ -43,7 +36,6 @@ suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
   library(DT)
-  library(gt)
   library(plotly)
   library(dplyr)
   library(tidyr)
@@ -89,10 +81,37 @@ safe_div <- function(num, denom) {
   out
 }
 
+# null-coalesce: x %||% y returns x unless it's NULL (or length-0), then y.
+# Used to seed Custom View Builder inputs from a saved view when present,
+# and a sensible default otherwise.
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
+
 # formats a numeric column for display, turning NA into "N/A"
 fmt_or_na <- function(x, digits = 1) {
   ifelse(is.na(x), "N/A", format(round(x, digits), nsmall = digits))
 }
+
+# Guarantees every column in `specs` (a named list of fill values, e.g.
+# list(rush_ybc = NA_real_)) exists in `df`, adding it filled with the given
+# value if it's missing. This is what makes the rest of the pipeline safe to
+# reference optional NGS/PFR/snap-count columns by bare name even when a
+# source table came back completely empty for a season (very likely for an
+# in-progress season, since PFR/NGS charting lags behind the box score) —
+# without this, a bare reference to a column that was never created by the
+# join throws "object 'x' not found" the moment any downstream mutate()
+# touches it.
+ensure_cols <- function(df, specs) {
+  for (nm in names(specs)) {
+    if (!nm %in% names(df)) df[[nm]] <- specs[[nm]]
+  }
+  df
+}
+
+# sum() with na.rm = TRUE silently returns 0 when every value is NA, which
+# would misrepresent "no data available for this player" as "measured zero
+# volume." Use this instead for optional PFR/NGS-sourced totals so a fully
+# missing season shows N/A rather than a misleading 0.
+sum_or_na <- function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
 
 # Renames only the columns that actually exist in `df`. `mapping` is a named
 # character vector, names = new column name, values = source column name
@@ -311,6 +330,24 @@ build_advanced_player_week <- function(season, scoring = SCORING_PRESETS[["Stand
     left_join(pfr_rec,  by = c("gsis_id", "week")) %>%
     rename(player_id = gsis_id)
 
+  # Guarantee every optional NGS/PFR/snap-count column exists (NA-filled if
+  # its source table was empty this season) before anything below
+  # references it by bare name.
+  out <- out %>% ensure_cols(list(
+    avg_cushion = NA_real_, avg_separation = NA_real_, avg_intended_air_yards = NA_real_,
+    percent_share_of_intended_air_yards = NA_real_, avg_yac = NA_real_, avg_expected_yac = NA_real_,
+    avg_yac_above_expectation = NA_real_, catch_percentage = NA_real_,
+    efficiency = NA_real_, avg_time_to_los = NA_real_, percent_attempts_gte_eight_defenders = NA_real_,
+    rush_yards_over_expected = NA_real_, rush_yards_over_expected_per_att = NA_real_,
+    rush_pct_over_expected = NA_real_,
+    offense_snaps = NA_real_, offense_pct = NA_real_,
+    rush_ybc = NA_real_, rush_ybc_att = NA_real_, rush_yac = NA_real_, rush_yac_att = NA_real_,
+    rush_brk_tkl = NA_real_, rush_att_per_brk_tkl = NA_real_,
+    rec_ybc = NA_real_, rec_ybc_per_rec = NA_real_, rec_yac = NA_real_, rec_yac_per_rec = NA_real_,
+    pfr_adot = NA_real_, rec_brk_tkl = NA_real_, rec_per_brk_tkl = NA_real_,
+    drops = NA_real_, drop_pct = NA_real_
+  ))
+
   # --- Calculated ratio metrics (NA-safe; never Inf/NaN)
   out <- out %>%
     mutate(
@@ -368,14 +405,14 @@ build_advanced_player_season <- function(season, scoring = SCORING_PRESETS[["Sta
       avg_yac          = mean(avg_yac, na.rm = TRUE),
       avg_expected_yac = mean(avg_expected_yac, na.rm = TRUE),
       offense_pct      = mean(offense_pct, na.rm = TRUE),
-      rush_ybc         = sum(rush_ybc, na.rm = TRUE),
-      rush_yac         = sum(rush_yac, na.rm = TRUE),
-      rush_brk_tkl     = sum(rush_brk_tkl, na.rm = TRUE),
-      rec_brk_tkl      = sum(rec_brk_tkl, na.rm = TRUE),
+      rush_ybc         = sum_or_na(rush_ybc),
+      rush_yac         = sum_or_na(rush_yac),
+      rush_brk_tkl     = sum_or_na(rush_brk_tkl),
+      rec_brk_tkl      = sum_or_na(rec_brk_tkl),
       pfr_adot         = mean(pfr_adot, na.rm = TRUE),
-      drops            = sum(drops, na.rm = TRUE),
+      drops            = sum_or_na(drops),
       efficiency       = mean(efficiency, na.rm = TRUE),
-      rush_yards_over_expected = sum(rush_yards_over_expected, na.rm = TRUE),
+      rush_yards_over_expected = sum_or_na(rush_yards_over_expected),
       .groups = "drop"
     ) %>%
     mutate(across(where(is.numeric), ~ ifelse(is.nan(.x) | is.infinite(.x), NA_real_, .x))) %>%
