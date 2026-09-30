@@ -1,129 +1,113 @@
 /* ------------------------------------------------------------------------
-   styles.css — "analytics terminal" visual layer on top of flexdashboard's
-   darkly bootswatch base. Adds a gradient backdrop, glass-panel cards with
-   hover lift, a consistent glow/accent system, refined typography, and
-   matching DT/plotly/value-box treatments. No JS, no extra R packages —
-   pure CSS so it can't introduce new failure modes.
+   styles.css — restrained, professional dark theme on top of flexdashboard's
+   darkly bootswatch base. Flat surfaces, one accent color used sparingly,
+   tight consistent radii, no gradients/glow/blur. Pure CSS, no extra
+   packages, no new failure modes.
    ------------------------------------------------------------------------ */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --app-bg-0:   #0a0e17;
-  --app-bg-1:   #0f1420;
-  --panel-bg:   #141a29;
-  --panel-bg-2: #182035;
-  --border:     #232c44;
-  --text:       #e9edf6;
-  --muted:      #8b93a7;
-  --accent:     #3fa7d6;
-  --accent-2:   #7c5cff;
-  --accent-glow: rgba(63, 167, 214, 0.35);
-  --good:       #35c98f;
-  --warn:       #f2a65a;
+  --bg:         #101319;
+  --panel:      #161a22;
+  --panel-alt:  #1b202a;
+  --border:     #262c38;
+  --text:       #e4e7ec;
+  --muted:      #8a93a3;
+  --accent:     #4a9de0;
+  --accent-dim: #3a7cb0;
+  --good:       #3fae7d;
+  --warn:       #d99a4e;
+  --radius:     8px;
 }
 
 * { box-sizing: border-box; }
 
 body, .navbar, .dashboard-page-wrapper {
-  background:
-    radial-gradient(1200px 700px at 8% -10%, rgba(124, 92, 255, 0.10), transparent 60%),
-    radial-gradient(1000px 600px at 100% 0%, rgba(63, 167, 214, 0.10), transparent 55%),
-    var(--app-bg-0) !important;
+  background: var(--bg) !important;
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  letter-spacing: 0.01em;
 }
 
-h1, h2, h3, h4, h5, .navbar-brand, .chart-title, .value-box .value {
-  font-family: 'Space Grotesk', 'Inter', sans-serif !important;
+h1, h2, h3, h4, h5 {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* ---------------------------------------------------------------- navbar */
 
 .navbar {
-  background: linear-gradient(180deg, rgba(20, 26, 41, 0.95), rgba(15, 20, 32, 0.95)) !important;
+  background: var(--panel) !important;
   border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 
 .navbar-brand {
-  font-weight: 700 !important;
-  letter-spacing: 0.02em;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-weight: 600 !important;
+  font-size: 15px;
+  color: var(--text) !important;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+}
+.navbar-brand::before {
+  content: "";
+  display: inline-block;
+  width: 8px; height: 8px;
+  margin-right: 9px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 .navbar-nav > li > a {
   font-weight: 500;
-  font-size: 13.5px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.01em;
   color: var(--muted) !important;
-  transition: color 0.15s ease;
+  transition: color 0.12s ease;
 }
-.navbar-nav > li > a:hover,
+.navbar-nav > li > a:hover { color: var(--text) !important; }
 .navbar-nav > li.active > a {
   color: var(--text) !important;
-}
-.navbar-nav > li.active > a {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 /* --------------------------------------------------------------- panels */
 
-.storyboard, .section.dashboard-section {
-  background: transparent !important;
-}
+.storyboard, .section.dashboard-section { background: transparent !important; }
 
 .chart-wrapper {
-  background: linear-gradient(180deg, var(--panel-bg-2), var(--panel-bg)) !important;
+  background: var(--panel) !important;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.02);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-  overflow: hidden;
-}
-.chart-wrapper:hover {
-  transform: translateY(-2px);
-  border-color: #2c3757;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(63, 167, 214, 0.12);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .chart-title {
-  background: transparent !important;
+  background: var(--panel) !important;
   color: var(--text) !important;
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 12.5px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  padding: 12px 16px !important;
+  color: var(--muted) !important;
+  padding: 11px 14px !important;
   border-bottom: 1px solid var(--border) !important;
 }
-.chart-title::before {
-  content: "";
-  display: inline-block;
-  width: 6px; height: 6px;
-  margin-right: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-}
 
-.chart-stage { padding: 6px; }
+.chart-stage { padding: 4px; }
 
 /* --------------------------------------------------------------- sidebar */
 
 .section.sidebar {
-  background: linear-gradient(180deg, var(--panel-bg-2), var(--app-bg-1)) !important;
+  background: var(--panel) !important;
   border-right: 1px solid var(--border);
 }
 .section.sidebar .form-group label {
-  font-size: 12px;
+  font-size: 11.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   color: var(--muted);
   font-weight: 600;
 }
@@ -131,124 +115,119 @@ h1, h2, h3, h4, h5, .navbar-brand, .chart-title, .value-box .value {
 /* --------------------------------------------------------------- value boxes */
 
 .value-box {
-  border-radius: 16px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.30);
+  border-radius: var(--radius) !important;
   border: 1px solid var(--border);
-  position: relative;
-  overflow: hidden;
-}
-.value-box::after {
-  content: "";
-  position: absolute; inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.04), transparent 60%);
-  pointer-events: none;
+  box-shadow: none;
+  background: var(--panel) !important;
 }
 .value-box .value {
-  font-weight: 700 !important;
-  font-size: 1.9rem !important;
+  font-weight: 600 !important;
+  font-size: 1.65rem !important;
   letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
 .value-box .caption {
-  font-size: 12.5px !important;
-  opacity: 0.9;
+  font-size: 12px !important;
+  color: var(--muted) !important;
+  opacity: 1;
 }
+.value-box .icon { opacity: 0.35; }
 
 /* -------------------------------------------------------------- DT tables */
 
 table.dataTable {
   background-color: transparent !important;
   color: var(--text) !important;
-  border-collapse: separate !important;
-  border-spacing: 0 4px !important;
+  font-size: 13px;
 }
 table.dataTable thead th {
   color: var(--muted) !important;
-  font-size: 11.5px;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   border-bottom: 1px solid var(--border) !important;
-  padding-bottom: 10px !important;
-}
-table.dataTable tbody tr {
-  background-color: var(--panel-bg-2) !important;
-}
-table.dataTable tbody tr:hover {
-  background-color: #1c243b !important;
+  padding-bottom: 9px !important;
 }
 table.dataTable tbody td {
-  border-top: none !important;
+  border-top: 1px solid var(--border) !important;
   padding: 8px 10px !important;
+  font-variant-numeric: tabular-nums;
+}
+table.dataTable tbody tr:hover td {
+  background-color: var(--panel-alt) !important;
 }
 .dataTables_wrapper .dataTables_filter input,
 .dataTables_wrapper .dataTables_length select {
-  background-color: var(--app-bg-1);
+  background-color: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 4px 8px;
+  font-size: 13px;
 }
 .dataTables_wrapper .dataTables_info,
 .dataTables_wrapper .dataTables_paginate {
   color: var(--muted) !important;
-  font-size: 12.5px;
+  font-size: 12px;
 }
-.dataTables_wrapper .paginate_button {
-  border-radius: 6px !important;
-}
+.dataTables_wrapper .paginate_button { border-radius: 5px !important; }
 
 /* ---------------------------------------------------------- buttons/inputs */
 
 .btn-primary {
-  background: linear-gradient(90deg, var(--accent), var(--accent-2)) !important;
-  border: none !important;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  box-shadow: 0 6px 18px var(--accent-glow);
+  background: var(--accent) !important;
+  border: 1px solid var(--accent-dim) !important;
+  font-weight: 500;
+  border-radius: 6px !important;
+  box-shadow: none;
 }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:hover { background: var(--accent-dim) !important; }
 
 .form-control, .selectize-input {
-  background-color: var(--app-bg-1) !important;
+  background-color: var(--bg) !important;
   color: var(--text) !important;
   border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
+  border-radius: 6px !important;
+  font-size: 13.5px;
 }
 .selectize-dropdown {
-  background-color: var(--panel-bg) !important;
+  background-color: var(--panel) !important;
   color: var(--text) !important;
   border: 1px solid var(--border) !important;
 }
-.irs--shiny .irs-bar { background: linear-gradient(90deg, var(--accent), var(--accent-2)) !important; }
-.irs--shiny .irs-handle { border-color: var(--accent) !important; }
+.irs--shiny .irs-bar { background: var(--accent) !important; }
+.irs--shiny .irs-handle { border-color: var(--accent) !important; box-shadow: none; }
+.irs--shiny .irs-single { background: var(--accent) !important; }
 
 /* -------------------------------------------------------- player detail */
 
 .definitions-list details {
-  background: var(--panel-bg-2);
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 16px;
-  margin-bottom: 8px;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 6px;
 }
 .definitions-list summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 500;
+  font-size: 13.5px;
   color: var(--text);
-  font-family: 'Space Grotesk', sans-serif;
 }
 .definitions-list p {
   color: var(--muted);
+  font-size: 13px;
   margin: 8px 0 2px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* ------------------------------------------------------------- scrollbar */
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: var(--app-bg-1); }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb {
-  background: #2b3554;
-  border-radius: 8px;
-  border: 2px solid var(--app-bg-1);
+  background: var(--border);
+  border-radius: 5px;
 }
-::-webkit-scrollbar-thumb:hover { background: #3a4770; }
+::-webkit-scrollbar-thumb:hover { background: #333c4d; }

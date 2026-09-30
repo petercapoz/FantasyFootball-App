@@ -268,12 +268,12 @@ output$vb_rush_epa <- renderValueBox({
 output$vb_rb_targets <- renderValueBox({
   d <- rb_season() %>% arrange(desc(targets))
   req(nrow(d) > 0)
-  valueBox(d$player_display_name[1], caption = sprintf("%.0f targets", d$targets[1]), icon = "fa-bullseye", color = "secondary")
+  valueBox(d$player_display_name[1], caption = sprintf("%.0f targets", d$targets[1]), icon = "fa-bullseye", color = "#4b5563")
 })
 output$vb_ypc <- renderValueBox({
   d <- rb_season() %>% filter(carries >= 30, !is.na(yards_per_carry)) %>% arrange(desc(yards_per_carry))
   req(nrow(d) > 0)
-  valueBox(d$player_display_name[1], caption = sprintf("%.2f YPC", d$yards_per_carry[1]), icon = "fa-gauge-high", color = "secondary")
+  valueBox(d$player_display_name[1], caption = sprintf("%.2f YPC", d$yards_per_carry[1]), icon = "fa-gauge-high", color = "#4b5563")
 })
 
 output$rb_workload <- renderPlot({
@@ -413,8 +413,8 @@ output$vb_rec_epa <- renderValueBox({
 })
 output$vb_separation <- renderValueBox({
   d <- wr_season() %>% filter(!is.na(avg_separation)) %>% arrange(desc(avg_separation))
-  if (nrow(d) == 0) return(valueBox("N/A", caption = "No NGS separation data for this slice", icon = "fa-ruler", color = "secondary"))
-  valueBox(d$player_display_name[1], caption = sprintf("%.2f yds avg. separation", d$avg_separation[1]), icon = "fa-ruler", color = "secondary")
+  if (nrow(d) == 0) return(valueBox("N/A", caption = "No NGS separation data for this slice", icon = "fa-ruler", color = "#4b5563"))
+  valueBox(d$player_display_name[1], caption = sprintf("%.2f yds avg. separation", d$avg_separation[1]), icon = "fa-ruler", color = "#4b5563")
 })
 
 output$wr_volume_scatter <- renderPlotly({
@@ -871,13 +871,13 @@ output$cv_chart_out <- renderPlotly({
       lab <- METRIC_DICTIONARY$label[METRIC_DICTIONARY$column == col]
       if (length(lab) == 0) col else lab[1]
     }
-    hover <- with(d, paste0(
-      player_display_name, " (", position, ", ", team, ")<br>",
-      metric_label(input$cv_x), ": ", round(.data[[input$cv_x]], 2), "<br>",
-      metric_label(input$cv_y), ": ", round(.data[[input$cv_y]], 2), "<br>",
-      "Fantasy Points: ", round(fantasy_points, 1), "<br>",
-      "Carries: ", carries, " | Targets: ", targets
-    ))
+    hover <- paste0(
+      d$player_display_name, " (", d$position, ", ", d$team, ")<br>",
+      metric_label(input$cv_x), ": ", round(d[[input$cv_x]], 2), "<br>",
+      metric_label(input$cv_y), ": ", round(d[[input$cv_y]], 2), "<br>",
+      "Fantasy Points: ", round(d$fantasy_points, 1), "<br>",
+      "Carries: ", d$carries, " | Targets: ", d$targets
+    )
     # markers only — enforced inside plotly_scatter(); never switched to a
     # line mode regardless of chart-type state elsewhere in the app.
     p <- plotly_scatter(d, input$cv_x, input$cv_y, color = input$cv_color, hover_text = hover)
@@ -888,9 +888,9 @@ output$cv_chart_out <- renderPlotly({
     d <- cv_base_data() %>% filter(!is.na(.data[[input$cv_metric]])) %>%
       arrange(desc(.data[[input$cv_metric]])) %>% head(input$cv_top_n)
     req(nrow(d) > 0)
-    plot_ly(d, x = ~reorder(player_display_name, .data[[input$cv_metric]]), y = as.formula(paste0("~", input$cv_metric)),
+    plot_ly(d, x = ~reorder(player_display_name, get(input$cv_metric)), y = as.formula(paste0("~", input$cv_metric)),
             type = "bar", marker = list(color = APP_ACCENT),
-            text = ~paste0(player_display_name, ": ", round(.data[[input$cv_metric]], 2)), hoverinfo = "text") %>%
+            text = ~paste0(player_display_name, ": ", round(get(input$cv_metric), 2)), hoverinfo = "text") %>%
       plotly_dark_layout(xtitle = NULL, ytitle = input$cv_metric) %>%
       layout(xaxis = list(categoryorder = "total ascending"))
 
@@ -908,7 +908,7 @@ output$cv_chart_out <- renderPlotly({
     suppressWarnings(
       plot_ly(d, x = ~week, y = as.formula(paste0("~", input$cv_metric)), color = ~player_display_name,
               type = "scatter", mode = "lines+markers",
-              text = ~paste0(player_display_name, " — Wk ", week, ": ", round(.data[[input$cv_metric]], 2)),
+              text = ~paste0(player_display_name, " — Wk ", week, ": ", round(get(input$cv_metric), 2)),
               hoverinfo = "text")
     ) %>%
       plotly_dark_layout(xtitle = "Week", ytitle = input$cv_metric)
